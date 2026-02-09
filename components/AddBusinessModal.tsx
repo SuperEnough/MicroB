@@ -7,7 +7,7 @@ import { generateBusinessBio } from '../services/geminiService';
 
 interface AddBusinessModalProps {
   onClose: () => void;
-  onSubmit: (business: Omit<Business, 'id' | 'status' | 'createdAt'>) => void;
+  onSubmit: (business: Omit<Business, 'id' | 'status' | 'createdAt'>) => Promise<void> | void;
   currentLocation: LatLng;
 }
 
@@ -21,6 +21,7 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ onClose, onSubmit, 
     keywords: '', // for AI generation
   });
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleAiBio = async () => {
     if (!formData.name || !formData.keywords) {
@@ -35,18 +36,25 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ onClose, onSubmit, 
     setIsGenerating(false);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit({
-      name: formData.name,
-      category: formData.category as Category,
-      whatsapp: formData.whatsapp,
-      phone: formData.phone || formData.whatsapp,
-      description: formData.description,
-      image: `https://picsum.photos/seed/${formData.name}/600/400`,
-      latitude: currentLocation.lat,
-      longitude: currentLocation.lng,
-    });
+    setIsSubmitting(true);
+    try {
+      await onSubmit({
+        name: formData.name,
+        category: formData.category as Category,
+        whatsapp: formData.whatsapp,
+        phone: formData.phone || formData.whatsapp,
+        description: formData.description,
+        image: `https://picsum.photos/seed/${formData.name}/600/400`,
+        latitude: currentLocation.lat,
+        longitude: currentLocation.lng,
+      });
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -152,9 +160,10 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ onClose, onSubmit, 
 
             <button 
               type="submit"
-              className="w-full py-4 bg-black text-white font-bold rounded-xl hover:bg-gray-800 transition-all shadow-lg"
+              disabled={isSubmitting}
+              className="w-full py-4 bg-black text-white font-bold rounded-xl hover:bg-gray-800 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-70"
             >
-              List My Business
+              {isSubmitting ? <Loader2 className="animate-spin" /> : 'List My Business'}
             </button>
           </div>
         </form>

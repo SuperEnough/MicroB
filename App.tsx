@@ -6,9 +6,11 @@ import { CATEGORIES, INITIAL_BUSINESSES } from './constants';
 import BusinessMap from './components/BusinessMap';
 import QuickViewDrawer from './components/QuickViewDrawer';
 import AddBusinessModal from './components/AddBusinessModal';
+import { supabase } from './services/supabaseClient';
 
 const App: React.FC = () => {
-  const [businesses, setBusinesses] = useState<Business[]>(INITIAL_BUSINESSES);
+  const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [isLoadingBusinesses, setIsLoadingBusinesses] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<Category | 'All'>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
@@ -20,7 +22,40 @@ const App: React.FC = () => {
   // Request user location on mount
   useEffect(() => {
     handleLocateUser();
+    fetchBusinesses();
   }, []);
+
+  const fetchBusinesses = async () => {
+    setIsLoadingBusinesses(true);
+    if (!supabase) {
+      console.warn("Supabase not configured, using mock data");
+      setBusinesses(INITIAL_BUSINESSES);
+      setIsLoadingBusinesses(false);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('businesses')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching businesses:', error);
+      setBusinesses(INITIAL_BUSINESSES); // Fallback to mock data on error
+    } else if (data) {
+      // Convert DB fields to match our frontend types if necessary
+      const formattedData: Business[] = data.map((item: any) => ({
+        ...item,
+        // Ensure numeric latitude/longitude if DB returns strings
+        latitude: Number(item.latitude),
+        longitude: Number(item.longitude),
+        // DB createdAt is usually ISO string, type expects number (timestamp)
+        createdAt: new Date(item.created_at).getTime()
+      }));
+      setBusinesses(formattedData);
+    }
+    setIsLoadingBusinesses(false);
+  };
 
   const handleLocateUser = () => {
     if ("geolocation" in navigator) {
@@ -37,8 +72,6 @@ const App: React.FC = () => {
         (error) => {
           console.error("Error getting location", error);
           setIsLocating(false);
-          // Don't set hasLocation to false here if we want to keep previous location, 
-          // but for initial load it defaults to false anyway.
         }
       );
     }
@@ -53,16 +86,45 @@ const App: React.FC = () => {
     });
   }, [businesses, selectedCategory, searchQuery]);
 
-  const handleAddBusiness = (newBusinessData: Omit<Business, 'id' | 'status' | 'createdAt'>) => {
+  const handleAddBusiness = async (newBusinessData: Omit<Business, 'id' | 'status' | 'createdAt'>) => {
+    // Optimistic UI update
+    const tempId = Math.random().toString(36).substr(2, 9);
     const newBusiness: Business = {
       ...newBusinessData,
-      id: Math.random().toString(36).substr(2, 9),
+      id: tempId,
       status: 'Active',
       createdAt: Date.now()
     };
+    
     setBusinesses(prev => [newBusiness, ...prev]);
     setShowAddModal(false);
     setSelectedBusiness(newBusiness);
+
+    // Persist to Supabase
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('businesses')
+        .insert([{
+          name: newBusinessData.name,
+          category: newBusinessData.category,
+          latitude: newBusinessData.latitude,
+          longitude: newBusinessData.longitude,
+          whatsapp: newBusinessData.whatsapp,
+          phone: newBusinessData.phone,
+          description: newBusinessData.description,
+          image: newBusinessData.image,
+          status: 'Active'
+        }])
+        .select();
+
+      if (error) {
+        console.error("Error saving business:", error);
+        alert("Failed to save to database, but shown locally.");
+      } else if (data) {
+        // Update the local state with the real ID from DB
+        setBusinesses(prev => prev.map(b => b.id === tempId ? { ...b, id: data[0].id } : b));
+      }
+    }
   };
 
   return (
@@ -124,6 +186,11 @@ const App: React.FC = () => {
 
       {/* Main Map Content */}
       <main className="flex-1 relative z-[1]">
+        {isLoadingBusinesses && businesses.length === 0 && (
+           <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-[20]">
+              <Loader2 className="animate-spin text-black" size={48} />
+           </div>
+        )}
         <BusinessMap 
           businesses={filteredBusinesses} 
           center={userLocation}
