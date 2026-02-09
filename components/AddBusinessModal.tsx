@@ -1,6 +1,8 @@
 
-import React, { useState } from 'react';
-import { X, MapPin, Upload, Wand2, Loader2 } from 'lucide-react';
+import React, { useState, useMemo, useRef } from 'react';
+import { X, Wand2, Loader2 } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
 import { CATEGORIES } from '../constants';
 import { Category, Business, LatLng } from '../types';
 import { generateBusinessBio } from '../services/geminiService';
@@ -11,6 +13,36 @@ interface AddBusinessModalProps {
   currentLocation: LatLng;
 }
 
+// Component to handle map clicks/drags for the pin
+const LocationSelector: React.FC<{ 
+  position: LatLng; 
+  onPositionChange: (lat: number, lng: number) => void;
+}> = ({ position, onPositionChange }) => {
+  const markerRef = useRef<L.Marker>(null);
+
+  const eventHandlers = useMemo(
+    () => ({
+      dragend() {
+        const marker = markerRef.current;
+        if (marker != null) {
+          const { lat, lng } = marker.getLatLng();
+          onPositionChange(lat, lng);
+        }
+      },
+    }),
+    [onPositionChange]
+  );
+
+  return (
+    <Marker
+      draggable={true}
+      eventHandlers={eventHandlers}
+      position={[position.lat, position.lng]}
+      ref={markerRef}
+    />
+  );
+};
+
 const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ onClose, onSubmit, currentLocation }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -20,6 +52,8 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ onClose, onSubmit, 
     description: '',
     keywords: '', // for AI generation
   });
+  
+  const [pinLocation, setPinLocation] = useState<LatLng>(currentLocation);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -47,8 +81,8 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ onClose, onSubmit, 
         phone: formData.phone || formData.whatsapp,
         description: formData.description,
         image: `https://picsum.photos/seed/${formData.name}/600/400`,
-        latitude: currentLocation.lat,
-        longitude: currentLocation.lng,
+        latitude: pinLocation.lat,
+        longitude: pinLocation.lng,
       });
     } catch (error) {
       console.error(error);
@@ -59,37 +93,68 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ onClose, onSubmit, 
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="bg-white w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
-        <div className="flex justify-between items-center p-6 border-b">
-          <h2 className="text-xl font-bold text-gray-900">Add My Business</h2>
+      <div className="bg-white w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+        <div className="flex justify-between items-center p-6 border-b shrink-0">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">Add My Business</h2>
+            <p className="text-sm text-gray-500">Step 2: Business Details</p>
+          </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
             <X size={20} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto max-h-[80vh]">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Business Name *</label>
-              <input 
-                required
-                type="text"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-black outline-none transition-all"
-                placeholder="e.g. The Coffee Corner"
-                value={formData.name}
-                onChange={e => setFormData(p => ({...p, name: e.target.value}))}
-              />
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
+          <div className="p-6 space-y-6">
+            
+            {/* Interactive Map Section */}
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-gray-700">
+                Confirm Location <span className="text-red-500">*</span>
+              </label>
+              <div className="h-48 w-full rounded-2xl overflow-hidden border border-gray-200 relative shadow-inner">
+                <MapContainer 
+                  center={[currentLocation.lat, currentLocation.lng]} 
+                  zoom={15} 
+                  className="h-full w-full"
+                >
+                  <TileLayer
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  <LocationSelector 
+                    position={pinLocation} 
+                    onPositionChange={(lat, lng) => setPinLocation({ lat, lng })} 
+                  />
+                </MapContainer>
+                <div className="absolute bottom-2 left-2 right-2 bg-white/90 backdrop-blur text-xs p-2 rounded-lg z-[400] text-center shadow-sm">
+                  Drag the marker to your exact storefront location
+                </div>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Category *</label>
-              <select 
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-black outline-none transition-all"
-                value={formData.category}
-                onChange={e => setFormData(p => ({...p, category: e.target.value as Category}))}
-              >
-                {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-              </select>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Business Name *</label>
+                <input 
+                  required
+                  type="text"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-black outline-none transition-all"
+                  placeholder="e.g. The Coffee Corner"
+                  value={formData.name}
+                  onChange={e => setFormData(p => ({...p, name: e.target.value}))}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Category *</label>
+                <select 
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-black outline-none transition-all"
+                  value={formData.category}
+                  onChange={e => setFormData(p => ({...p, category: e.target.value as Category}))}
+                >
+                  {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -133,7 +198,7 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ onClose, onSubmit, 
                   className="flex items-center gap-1 bg-black text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-50"
                 >
                   {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
-                  Magic Bio
+                  Bio
                 </button>
               </div>
             </div>
@@ -149,21 +214,15 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ onClose, onSubmit, 
                 onChange={e => setFormData(p => ({...p, description: e.target.value}))}
               />
             </div>
-
-            <div className="flex items-center gap-2 p-4 bg-blue-50 text-blue-700 rounded-xl">
-              <MapPin size={20} />
-              <div className="text-xs">
-                <p className="font-bold">Your Pin Location</p>
-                <p>We'll use your current GPS location to place the marker.</p>
-              </div>
-            </div>
-
+          </div>
+          
+          <div className="p-6 border-t bg-gray-50">
             <button 
               type="submit"
               disabled={isSubmitting}
               className="w-full py-4 bg-black text-white font-bold rounded-xl hover:bg-gray-800 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-70"
             >
-              {isSubmitting ? <Loader2 className="animate-spin" /> : 'List My Business'}
+              {isSubmitting ? <Loader2 className="animate-spin" /> : 'Create Business Profile'}
             </button>
           </div>
         </form>

@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Plus, Map as MapIcon, Filter, Locate, Loader2 } from 'lucide-react';
+import { Search, Plus, Map as MapIcon, Filter, Locate, Loader2, User } from 'lucide-react';
 import { Business, Category, LatLng } from './types';
 import { CATEGORIES, INITIAL_BUSINESSES } from './constants';
 import BusinessMap from './components/BusinessMap';
 import QuickViewDrawer from './components/QuickViewDrawer';
 import AddBusinessModal from './components/AddBusinessModal';
+import AuthModal from './components/AuthModal';
 import { supabase } from './services/supabaseClient';
 
 const App: React.FC = () => {
@@ -14,15 +15,37 @@ const App: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<Category | 'All'>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
+  
+  // Modal States
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  
+  // Location States
   const [userLocation, setUserLocation] = useState<LatLng>({ lat: 40.7128, lng: -74.0060 }); // Default NYC
   const [hasLocation, setHasLocation] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
 
-  // Request user location on mount
+  // Auth State
+  const [user, setUser] = useState<any>(null);
+
+  // Initialization
   useEffect(() => {
     handleLocateUser();
     fetchBusinesses();
+    
+    if (supabase) {
+      // Check active session
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setUser(session?.user ?? null);
+      });
+
+      // Listen for auth changes
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        setUser(session?.user ?? null);
+      });
+
+      return () => subscription.unsubscribe();
+    }
   }, []);
 
   const fetchBusinesses = async () => {
@@ -41,15 +64,12 @@ const App: React.FC = () => {
 
     if (error) {
       console.error('Error fetching businesses:', error);
-      setBusinesses(INITIAL_BUSINESSES); // Fallback to mock data on error
+      setBusinesses(INITIAL_BUSINESSES); 
     } else if (data) {
-      // Convert DB fields to match our frontend types if necessary
       const formattedData: Business[] = data.map((item: any) => ({
         ...item,
-        // Ensure numeric latitude/longitude if DB returns strings
         latitude: Number(item.latitude),
         longitude: Number(item.longitude),
-        // DB createdAt is usually ISO string, type expects number (timestamp)
         createdAt: new Date(item.created_at).getTime()
       }));
       setBusinesses(formattedData);
@@ -77,6 +97,14 @@ const App: React.FC = () => {
     }
   };
 
+  const handleAddClick = () => {
+    if (user) {
+      setShowAddModal(true);
+    } else {
+      setShowAuthModal(true);
+    }
+  };
+
   const filteredBusinesses = useMemo(() => {
     return businesses.filter(b => {
       const matchesCategory = selectedCategory === 'All' || b.category === selectedCategory;
@@ -87,7 +115,6 @@ const App: React.FC = () => {
   }, [businesses, selectedCategory, searchQuery]);
 
   const handleAddBusiness = async (newBusinessData: Omit<Business, 'id' | 'status' | 'createdAt'>) => {
-    // Optimistic UI update
     const tempId = Math.random().toString(36).substr(2, 9);
     const newBusiness: Business = {
       ...newBusinessData,
@@ -100,28 +127,33 @@ const App: React.FC = () => {
     setShowAddModal(false);
     setSelectedBusiness(newBusiness);
 
-    // Persist to Supabase
     if (supabase) {
+      // We try to insert. If the table doesn't have user_id yet, this might fail or just ignore user_id depending on RLS.
+      // We add the user_id from the current session.
+      const payload: any = {
+        name: newBusinessData.name,
+        category: newBusinessData.category,
+        latitude: newBusinessData.latitude,
+        longitude: newBusinessData.longitude,
+        whatsapp: newBusinessData.whatsapp,
+        phone: newBusinessData.phone,
+        description: newBusinessData.description,
+        image: newBusinessData.image,
+        status: 'Active'
+      };
+      
+      if (user) {
+        payload.user_id = user.id;
+      }
+
       const { data, error } = await supabase
         .from('businesses')
-        .insert([{
-          name: newBusinessData.name,
-          category: newBusinessData.category,
-          latitude: newBusinessData.latitude,
-          longitude: newBusinessData.longitude,
-          whatsapp: newBusinessData.whatsapp,
-          phone: newBusinessData.phone,
-          description: newBusinessData.description,
-          image: newBusinessData.image,
-          status: 'Active'
-        }])
+        .insert([payload])
         .select();
 
       if (error) {
         console.error("Error saving business:", error);
-        alert("Failed to save to database, but shown locally.");
       } else if (data) {
-        // Update the local state with the real ID from DB
         setBusinesses(prev => prev.map(b => b.id === tempId ? { ...b, id: data[0].id } : b));
       }
     }
@@ -145,11 +177,14 @@ const App: React.FC = () => {
                 onChange={e => setSearchQuery(e.target.value)}
               />
             </div>
+            
+            {/* Add Business Button - Now gates with Auth */}
             <button 
-              onClick={() => setShowAddModal(true)}
-              className="h-14 w-14 flex items-center justify-center bg-black text-white rounded-2xl shadow-xl hover:scale-105 active:scale-95 transition-all"
+              onClick={handleAddClick}
+              className={`h-14 flex items-center justify-center gap-2 px-4 rounded-2xl shadow-xl hover:scale-105 active:scale-95 transition-all ${user ? 'bg-black text-white' : 'bg-white text-black border border-gray-100'}`}
             >
               <Plus size={24} />
+              {user ? <span className="hidden sm:inline font-bold">Add</span> : <span className="hidden sm:inline font-bold">Join</span>}
             </button>
           </div>
 
@@ -206,6 +241,17 @@ const App: React.FC = () => {
         onClose={() => setSelectedBusiness(null)} 
       />
 
+      {/* Auth Modal */}
+      {showAuthModal && (
+        <AuthModal 
+          onClose={() => setShowAuthModal(false)}
+          onSuccess={() => {
+            setShowAuthModal(false);
+            setShowAddModal(true);
+          }}
+        />
+      )}
+
       {/* Add Business Modal */}
       {showAddModal && (
         <AddBusinessModal 
@@ -226,8 +272,8 @@ const App: React.FC = () => {
           <span className="text-[10px] font-bold uppercase tracking-wider">Filters</span>
         </button>
         <button className="flex flex-col items-center gap-1 text-gray-400">
-          <Search size={24} />
-          <span className="text-[10px] font-bold uppercase tracking-wider">Search</span>
+          <User size={24} />
+          <span className="text-[10px] font-bold uppercase tracking-wider">{user ? 'Profile' : 'Log In'}</span>
         </button>
       </nav>
     </div>

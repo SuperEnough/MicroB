@@ -11,6 +11,16 @@ export const CATEGORIES: Category[] = [
   'Other'
 ];
 
+export const CATEGORY_COLORS: Record<Category, string> = {
+  'Hair & Beauty': '#ec4899', // Pink
+  'Home Services': '#f59e0b', // Amber
+  'Food & Drink': '#ef4444', // Red
+  'Retail': '#3b82f6', // Blue
+  'Wellness': '#10b981', // Emerald
+  'Creative': '#8b5cf6', // Violet
+  'Other': '#6b7280', // Gray
+};
+
 export const INITIAL_BUSINESSES: Business[] = [
   {
     id: '1',
