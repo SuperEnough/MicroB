@@ -1,11 +1,12 @@
 
-import React, { useState, useMemo, useRef } from 'react';
-import { X, Wand2, Loader2 } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { X, Wand2, Loader2, MapPin } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { CATEGORIES } from '../constants';
+import { CATEGORIES, CATEGORY_COLORS } from '../constants';
 import { Category, Business, LatLng } from '../types';
 import { generateBusinessBio } from '../services/geminiService';
+import { createCategoryIcon } from './BusinessMap';
 
 interface AddBusinessModalProps {
   onClose: () => void;
@@ -17,9 +18,21 @@ interface AddBusinessModalProps {
 const LocationSelector: React.FC<{ 
   position: LatLng; 
   onPositionChange: (lat: number, lng: number) => void;
-}> = ({ position, onPositionChange }) => {
+  category: string;
+}> = ({ position, onPositionChange, category }) => {
   const markerRef = useRef<L.Marker>(null);
+  const map = useMap();
 
+  // Allow clicking anywhere to move pin
+  useMapEvents({
+    click(e) {
+      onPositionChange(e.latlng.lat, e.latlng.lng);
+    },
+  });
+
+  // Fly to location when it changes significantly (optional, good for UX if location updates externally)
+  // But usually we just let the user pan.
+  
   const eventHandlers = useMemo(
     () => ({
       dragend() {
@@ -39,8 +52,19 @@ const LocationSelector: React.FC<{
       eventHandlers={eventHandlers}
       position={[position.lat, position.lng]}
       ref={markerRef}
+      icon={createCategoryIcon(category)}
+      zIndexOffset={100}
     />
   );
+};
+
+// Component to recenter map initially or when location changes externally
+const MapRecenter: React.FC<{ center: LatLng }> = ({ center }) => {
+  const map = useMap();
+  useEffect(() => {
+    map.setView([center.lat, center.lng], 16);
+  }, [center, map]);
+  return null;
 };
 
 const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ onClose, onSubmit, currentLocation }) => {
@@ -93,11 +117,11 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ onClose, onSubmit, 
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="bg-white w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
-        <div className="flex justify-between items-center p-6 border-b shrink-0">
+      <div className="bg-white w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col max-h-[95vh]">
+        <div className="flex justify-between items-center p-6 border-b shrink-0 bg-white z-10">
           <div>
             <h2 className="text-xl font-bold text-gray-900">Add My Business</h2>
-            <p className="text-sm text-gray-500">Step 2: Business Details</p>
+            <p className="text-sm text-gray-500">Drag pin or click map to set precise location</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
             <X size={20} />
@@ -109,25 +133,37 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ onClose, onSubmit, 
             
             {/* Interactive Map Section */}
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">
-                Confirm Location <span className="text-red-500">*</span>
-              </label>
-              <div className="h-48 w-full rounded-2xl overflow-hidden border border-gray-200 relative shadow-inner">
+              <div className="flex justify-between items-center">
+                <label className="block text-sm font-semibold text-gray-700">
+                    Business Location <span className="text-red-500">*</span>
+                </label>
+                <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-full font-medium">
+                    {pinLocation.lat.toFixed(5)}, {pinLocation.lng.toFixed(5)}
+                </span>
+              </div>
+              
+              <div className="h-64 w-full rounded-2xl overflow-hidden border-2 border-gray-100 relative shadow-inner group">
                 <MapContainer 
                   center={[currentLocation.lat, currentLocation.lng]} 
-                  zoom={15} 
+                  zoom={16} 
                   className="h-full w-full"
+                  scrollWheelZoom={false} // Disable scroll zoom to prevent page scroll issues unless focused? Let's keep false for modal.
                 >
                   <TileLayer
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
                   />
+                  <MapRecenter center={currentLocation} />
                   <LocationSelector 
                     position={pinLocation} 
                     onPositionChange={(lat, lng) => setPinLocation({ lat, lng })} 
+                    category={formData.category}
                   />
                 </MapContainer>
-                <div className="absolute bottom-2 left-2 right-2 bg-white/90 backdrop-blur text-xs p-2 rounded-lg z-[400] text-center shadow-sm">
-                  Drag the marker to your exact storefront location
+                
+                {/* Overlay Hint */}
+                <div className="absolute top-2 right-2 bg-white/90 backdrop-blur text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm z-[400] pointer-events-none flex items-center gap-1">
+                    <MapPin size={12} className="text-black" />
+                    Tap map to place pin
                 </div>
               </div>
             </div>
@@ -216,7 +252,7 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ onClose, onSubmit, 
             </div>
           </div>
           
-          <div className="p-6 border-t bg-gray-50">
+          <div className="p-6 border-t bg-gray-50 sticky bottom-0 z-10">
             <button 
               type="submit"
               disabled={isSubmitting}
