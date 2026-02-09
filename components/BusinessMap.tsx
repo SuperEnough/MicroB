@@ -19,6 +19,7 @@ interface BusinessMapProps {
   center: LatLng;
   onBusinessSelect: (business: Business) => void;
   selectedBusinessId?: string;
+  showUserLocation?: boolean;
 }
 
 const RecenterMap: React.FC<{ center: LatLng }> = ({ center }) => {
@@ -29,7 +30,7 @@ const RecenterMap: React.FC<{ center: LatLng }> = ({ center }) => {
   return null;
 };
 
-const BusinessMap: React.FC<BusinessMapProps> = ({ businesses, center, onBusinessSelect, selectedBusinessId }) => {
+const BusinessMap: React.FC<BusinessMapProps> = ({ businesses, center, onBusinessSelect, selectedBusinessId, showUserLocation = false }) => {
   return (
     <div className="w-full h-full">
       <MapContainer 
@@ -45,18 +46,34 @@ const BusinessMap: React.FC<BusinessMapProps> = ({ businesses, center, onBusines
         <RecenterMap center={center} />
         
         {/* User Location Indicator */}
-        <Circle 
-          center={[center.lat, center.lng]}
-          radius={1200}
-          pathOptions={{ color: '#2563eb', fillColor: '#3b82f6', fillOpacity: 0.1, weight: 1, dashArray: '5, 5' }}
-        />
-        <CircleMarker 
-          center={[center.lat, center.lng]}
-          radius={8}
-          pathOptions={{ color: 'white', fillColor: '#2563eb', fillOpacity: 1, weight: 3 }}
-        >
-          <Popup>You are here</Popup>
-        </CircleMarker>
+        {showUserLocation && (
+          <>
+            {/* Area Circle (e.g., 'Walking Distance') */}
+            <Circle 
+              center={[center.lat, center.lng]}
+              radius={1200}
+              pathOptions={{ 
+                color: '#2563eb', // Blue-600
+                fillColor: '#3b82f6', // Blue-500
+                fillOpacity: 0.15, 
+                weight: 1.5,
+              }}
+            />
+            {/* User Pin (Current Location Dot) */}
+            <CircleMarker 
+              center={[center.lat, center.lng]}
+              radius={6}
+              pathOptions={{ 
+                color: 'white', 
+                fillColor: '#2563eb', // Blue-600
+                fillOpacity: 1, 
+                weight: 2 
+              }}
+            >
+              <Popup>You are here</Popup>
+            </CircleMarker>
+          </>
+        )}
 
         {businesses.map((business) => (
           <Marker 

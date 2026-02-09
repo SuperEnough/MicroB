@@ -14,6 +14,7 @@ const App: React.FC = () => {
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [userLocation, setUserLocation] = useState<LatLng>({ lat: 40.7128, lng: -74.0060 }); // Default NYC
+  const [hasLocation, setHasLocation] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
 
   // Request user location on mount
@@ -30,11 +31,14 @@ const App: React.FC = () => {
             lat: position.coords.latitude,
             lng: position.coords.longitude
           });
+          setHasLocation(true);
           setIsLocating(false);
         },
         (error) => {
           console.error("Error getting location", error);
           setIsLocating(false);
+          // Don't set hasLocation to false here if we want to keep previous location, 
+          // but for initial load it defaults to false anyway.
         }
       );
     }
@@ -125,6 +129,7 @@ const App: React.FC = () => {
           center={userLocation}
           onBusinessSelect={setSelectedBusiness}
           selectedBusinessId={selectedBusiness?.id}
+          showUserLocation={hasLocation}
         />
       </main>
 
