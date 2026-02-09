@@ -1,0 +1,7 @@
+{
+  "name": "LocalPulse - Micro-Business Directory",
+  "description": "A map-first directory to find and connect with local micro-businesses via WhatsApp or Phone.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
